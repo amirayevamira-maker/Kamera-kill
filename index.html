@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Kamera Kill</title>
+<style>
+  :root{--bg:#101418;--fg:#eef2f0;--acc:#ff4d2e;--ok:#3ddc84;--mut:#8a949c}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #menu,#end{position:fixed;inset:0;display:flex;flex-direction:column;justify-content:center;gap:14px;padding:28px;max-width:460px;margin:auto;z-index:20;background:var(--bg)}
+  h1{font-size:34px;margin:0 0 4px;letter-spacing:-.5px}
+  p{margin:0;color:var(--mut);line-height:1.4;font-size:15px}
+  button,input{font:inherit;border-radius:12px;border:2px solid #2b343b;background:#1a2127;color:var(--fg);padding:15px}
+  button{font-weight:700;cursor:pointer}
+  button.main{background:var(--acc);border-color:var(--acc);color:#fff}
+  input{text-align:center;letter-spacing:3px;text-transform:uppercase;user-select:text}
+  #status{min-height:22px;color:var(--ok);font-size:14px}
+  #game{position:fixed;inset:0;display:none;background:#000}
+  video,canvas{position:absolute;inset:0;width:100%;height:100%}
+  video{object-fit:cover}
+  #cross{position:absolute;left:50%;top:50%;width:54px;height:54px;transform:translate(-50%,-50%);pointer-events:none}
+  #cross:before,#cross:after{content:"";position:absolute;background:#fff;box-shadow:0 0 3px #000}
+  #cross:before{left:50%;top:0;bottom:0;width:2px;margin-left:-1px;clip-path:polygon(0 0,100% 0,100% 38%,0 38%,0 62%,100% 62%,100% 100%,0 100%)}
+  #cross:after{top:50%;left:0;right:0;height:2px;margin-top:-1px;clip-path:polygon(0 0,38% 0,38% 100%,0 100%,62% 0,100% 0,100% 100%,62% 100%)}
+  #cross.lock:before,#cross.lock:after{background:var(--acc)}
+  #hud{position:absolute;top:0;left:0;right:0;padding:calc(env(safe-area-inset-top) + 12px) 14px 0;display:flex;gap:10px;align-items:center;pointer-events:none}
+  .bar{flex:1;height:16px;border-radius:8px;background:rgba(0,0,0,.55);overflow:hidden;border:2px solid rgba(255,255,255,.6)}
+  #hp{height:100%;width:100%;background:var(--ok);transition:width .25s,background .25s}
+  #foe{font-weight:700;font-size:14px;text-shadow:0 1px 3px #000;min-width:70px;text-align:right}
+  #fire{position:absolute;right:22px;bottom:calc(env(safe-area-inset-bottom) + 30px);width:96px;height:96px;border-radius:50%;background:var(--acc);border:4px solid #fff;color:#fff;font-size:15px;padding:0;box-shadow:0 4px 18px rgba(0,0,0,.6)}
+  #fire:active{transform:scale(.93)}
+  #msg{position:absolute;left:0;right:0;top:22%;text-align:center;font-size:26px;font-weight:800;text-shadow:0 2px 6px #000;pointer-events:none;opacity:0;transition:opacity .2s}
+  #flash{position:absolute;inset:0;background:rgba(255,0,0,.45);opacity:0;pointer-events:none;transition:opacity .35s}
+  #gun{position:absolute;right:20%;bottom:-3vh;width:min(50vw,440px);pointer-events:none;transform-origin:100% 100%;transition:transform .07s}
+  #gun.kick{transform:translate(5px,12px) rotate(2.5deg)}
+  #gun svg{width:100%;height:auto;display:none;filter:drop-shadow(0 6px 8px rgba(0,0,0,.55))}
+  #gun[data-w=pistol] .sp,#gun[data-w=ak] .sa{display:block}
+  .mf{opacity:0}
+  #gun.kick .mf{opacity:1}
+  #wpn{position:absolute;left:18px;bottom:calc(env(safe-area-inset-bottom) + 26px);padding:12px 16px;background:rgba(0,0,0,.6);border-color:#fff;font-size:14px}
+  #ammo{position:absolute;right:16px;top:calc(env(safe-area-inset-top) + 44px);font-weight:800;font-size:22px;text-shadow:0 2px 4px #000}
+  #rot{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 40px);text-align:center;font-size:14px;background:rgba(255,77,46,.85);padding:6px;display:none;pointer-events:none}
+  @media (orientation:portrait){#rot{display:block}}
+  @media (orientation:landscape){#gun{width:min(42vw,420px);right:22%}#fire{width:88px;height:88px}}
+  #load{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 14px);left:14px;font-size:13px;color:#fff;text-shadow:0 1px 3px #000}
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>Kamera Kill</h1>
+  <p>Orqa kamera ochiladi, nishonni raqibga to'g'rilang va o'q uzing. Raqibning joni kamayadi.</p>
+  <button class="main" id="bCreate">Xona yaratish</button>
+  <input id="code" placeholder="XONA KODI" maxlength="5" autocomplete="off">
+  <button id="bJoin">Xonaga kirish</button>
+  <button id="bSolo">Yakka mashq (ulanishsiz)</button>
+  <div id="status"></div>
+</div>
+
+<div id="game">
+  <video id="vid" autoplay playsinline muted></video>
+  <canvas id="cv"></canvas>
+  <div id="cross"></div>
+  <div id="flash"></div>
+  <div id="hud">
+    <div class="bar"><div id="hp"></div></div>
+    <div id="foe">Raqib: 100</div>
+  </div>
+  <div id="msg"></div>
+  <div id="load">Aniqlash yuklanmoqda…</div>
+  <div id="rot">Telefonni yonlama (gorizontal) tuting</div>
+  <div id="ammo"></div>
+  <div id="gun" data-w="pistol">
+    <svg class="sp" viewBox="0 0 300 200"><polygon class="mf" points="2,52 40,40 30,20 52,38 60,10 70,40 90,50 70,62 55,86 45,64 28,78 38,60" fill="#ffd54a"/>
+      <rect x="70" y="40" width="190" height="46" rx="7" fill="#3a434b"/><rect x="70" y="40" width="190" height="10" rx="5" fill="#59646d"/>
+      <rect x="110" y="86" width="150" height="14" fill="#232a30"/><path d="M180 100h-30v24c0 10 8 14 16 14h22z" fill="none" stroke="#232a30" stroke-width="6"/>
+      <polygon points="200,86 262,86 270,186 214,196" fill="#1b2025"/><rect x="226" y="60" width="18" height="6" fill="#ff4d2e"/></svg>
+    <svg class="sa" viewBox="0 0 420 200"><polygon class="mf" points="0,56 38,44 28,22 52,42 60,12 72,44 98,54 72,66 56,92 46,68 28,84 38,64" fill="#ffd54a"/>
+      <rect x="40" y="52" width="150" height="9" fill="#2a3036"/><rect x="26" y="46" width="22" height="22" rx="3" fill="#232a30"/>
+      <rect x="100" y="64" width="120" height="26" rx="4" fill="#8a5a2b"/><rect x="190" y="50" width="130" height="42" rx="5" fill="#3a434b"/>
+      <rect x="190" y="50" width="130" height="9" rx="4" fill="#59646d"/><rect x="200" y="40" width="70" height="10" rx="3" fill="#232a30"/>
+      <path d="M250 92l12 0l18 70c2 8-4 12-14 12h-14c-8 0-12-6-10-14z" fill="#232a30"/>
+      <polygon points="300,92 326,92 340,176 308,180" fill="#1b2025"/><polygon points="320,56 410,70 404,134 320,100" fill="#8a5a2b"/></svg>
+  </div>
+  <button id="wpn">Almashtir: AK-47</button>
+  <button id="fire">OT!</button>
+</div>
+
+<div id="end">
+  <h1 id="endT"></h1>
+  <p id="endP"></p>
+  <button class="main" id="bAgain">Qayta o'ynash</button>
+</div>
+<script>document.getElementById('end').style.display='none';</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const PREFIX = 'kjang-';
+const W = {
+  pistol:{name:'Pistolet', dmg:15, cd:420, auto:false, mag:12, rl:1100},
+  ak:{name:'AK-47', dmg:9, cd:110, auto:true, mag:30, rl:1800}
+};
+let cur = 'pistol', ammo = 12, reloading = false, rlId = 0, holdTimer = null;
+let peer, conn, model, stream, persons = [], hp = 100, foeHp = 100, solo = false, over = false, lastShot = 0, role = '';
+
+const status = t => $('status').textContent = t;
+
+// ---------- Ulanish ----------
+function makeCode(){ return Array.from({length:5}, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*32)]).join(''); }
+
+$('bCreate').onclick = () => {
+  role = 'host';
+  const code = makeCode();
+  status('Xona yaratilmoqda…');
+  peer = new Peer(PREFIX + code);
+  peer.on('open', () => status('Xona kodi: ' + code + '  — do\'stingizga ayting'));
+  peer.on('connection', c => { conn = c; setupConn(); });
+  peer.on('error', e => status(e.type === 'unavailable-id' ? 'Kod band, qayta bosing' : 'Xato: ' + e.type));
+};
+
+$('bJoin').onclick = () => {
+  const code = $('code').value.trim().toUpperCase();
+  if(code.length < 5) return status('5 belgili kodni kiriting');
+  role = 'guest';
+  status('Ulanmoqda…');
+  peer = new Peer();
+  peer.on('open', () => { conn = peer.connect(PREFIX + code, {reliable:true}); setupConn(); });
+  peer.on('error', e => status('Ulanib bo\'lmadi: ' + e.type));
+};
+
+$('bSolo').onclick = () => { solo = true; startGame(); };
+
+function setupConn(){
+  conn.on('open', () => { solo = false; startGame(); });
+  conn.on('data', onData);
+  conn.on('close', () => { if(!over) finish(true, 'Raqib chiqib ketdi'); });
+}
+
+function send(o){ if(conn && conn.open) conn.send(o); }
+
+function onData(d){
+  if(d.t === 'hit'){
+    hp = Math.max(0, hp - (d.dmg || 15));
+    updateHud();
+    $('flash').style.opacity = 1; setTimeout(() => $('flash').style.opacity = 0, 120);
+    if(navigator.vibrate) navigator.vibrate(200);
+    send({t:'hp', v:hp});
+    if(hp <= 0){ send({t:'dead'}); finish(false); }
+  } else if(d.t === 'hp'){ foeHp = d.v; updateHud(); }
+  else if(d.t === 'dead'){ foeHp = 0; updateHud(); finish(true); }
+  else if(d.t === 'again'){ resetState(); }
+}
+
+// ---------- O'yin ----------
+async function startGame(){
+  try{ document.documentElement.requestFullscreen().then(() => screen.orientation.lock('landscape')).catch(()=>{}); }catch(e){}
+  $('menu').style.display = 'none';
+  $('game').style.display = 'block';
+  resetState();
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:960}, height:{ideal:720}}, audio:false});
+    $('vid').srcObject = stream;
+    await $('vid').play();
+  }catch(e){
+    alert('Kameraga ruxsat berilmadi yoki sahifa HTTPS emas.');
+    return;
+  }
+  if(!model){ model = await cocoSsd.load({base:'lite_mobilenet_v2'}); }
+  $('load').style.display = 'none';
+  loop();
+}
+
+function resetState(){
+  hp = 100; foeHp = 100; over = false; updateHud(); setWeapon('pistol');
+  $('end').style.display = 'none';
+  if(!solo) $('foe').style.display = '';
+  else $('foe').textContent = 'Mashq';
+}
+
+function updateHud(){
+  $('hp').style.width = hp + '%';
+  $('hp').style.background = hp > 50 ? 'var(--ok)' : hp > 25 ? '#ffc400' : 'var(--acc)';
+  if(!solo) $('foe').textContent = 'Raqib: ' + foeHp;
+}
+
+function say(t, ms = 900){
+  $('msg').textContent = t; $('msg').style.opacity = 1;
+  setTimeout(() => $('msg').style.opacity = 0, ms);
+}
+
+// Aniqlash tsikli
+const vid = $('vid'), cv = $('cv'), ctx = cv.getContext('2d');
+let busy = false;
+function view(){
+  const cw = cv.clientWidth, ch = cv.clientHeight, vw = vid.videoWidth, vh = vid.videoHeight;
+  const s = Math.max(cw/vw, ch/vh);
+  return {cw, ch, vw, vh, s, ox:(cw - vw*s)/2, oy:(ch - vh*s)/2};
+}
+function onTarget(){
+  const {vw, vh} = view(), cx = vw/2, cy = vh/2;
+  return persons.find(p => { const [x,y,w,h] = p.bbox; return cx >= x && cx <= x+w && cy >= y && cy <= y+h; });
+}
+
+async function loop(){
+  if(!busy && model && vid.videoWidth){
+    busy = true;
+    try{
+      const r = await model.detect(vid, 6, 0.45);
+      persons = r.filter(o => o.class === 'person');
+    }catch(e){}
+    busy = false;
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function draw(){
+  const dpr = window.devicePixelRatio || 1;
+  if(cv.width !== cv.clientWidth*dpr){ cv.width = cv.clientWidth*dpr; cv.height = cv.clientHeight*dpr; }
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+  if(!vid.videoWidth) return;
+  const v = view(), t = onTarget();
+  persons.forEach(p => {
+    const [x,y,w,h] = p.bbox;
+    ctx.strokeStyle = p === t ? '#ff4d2e' : 'rgba(255,255,255,.55)';
+    ctx.lineWidth = p === t ? 3 : 1.5;
+    ctx.strokeRect(x*v.s + v.ox, y*v.s + v.oy, w*v.s, h*v.s);
+  });
+  $('cross').classList.toggle('lock', !!t);
+}
+
+// Qurol va o'q uzish
+function updateAmmo(){ $('ammo').textContent = reloading ? 'Qayta o\'qlanmoqda…' : W[cur].name + '  ' + ammo + '/' + W[cur].mag; }
+
+function setWeapon(k){
+  cur = k; rlId++; reloading = false; ammo = W[k].mag;
+  $('gun').dataset.w = k;
+  $('wpn').textContent = 'Almashtir: ' + W[k === 'pistol' ? 'ak' : 'pistol'].name;
+  updateAmmo();
+}
+
+function reload(){
+  if(reloading) return;
+  reloading = true; const id = ++rlId; updateAmmo();
+  setTimeout(() => { if(id !== rlId) return; ammo = W[cur].mag; reloading = false; updateAmmo(); }, W[cur].rl);
+}
+
+function shoot(){
+  if(over || reloading) return;
+  const w = W[cur], now = Date.now();
+  if(now - lastShot < w.cd) return;
+  lastShot = now;
+  if(ammo <= 0){ reload(); return; }
+  ammo--; updateAmmo();
+  $('gun').classList.add('kick'); setTimeout(() => $('gun').classList.remove('kick'), 70);
+  if(navigator.vibrate) navigator.vibrate(w.auto ? 15 : 30);
+  if(onTarget()){
+    say('TEGDI!', 350);
+    if(solo){ foeHp = Math.max(0, foeHp - w.dmg); updateHud(); if(foeHp <= 0){ say('Mashq g\'alabasi!', 1200); foeHp = 100; updateHud(); } }
+    else send({t:'hit', dmg:w.dmg});
+  }
+  if(ammo <= 0) reload();
+}
+
+const stopFire = () => { clearInterval(holdTimer); holdTimer = null; };
+$('fire').addEventListener('pointerdown', e => {
+  e.preventDefault(); shoot();
+  if(W[cur].auto){ stopFire(); holdTimer = setInterval(shoot, 40); }
+});
+['pointerup','pointercancel','pointerleave'].forEach(ev => $('fire').addEventListener(ev, stopFire));
+$('wpn').addEventListener('click', () => setWeapon(cur === 'pistol' ? 'ak' : 'pistol'));
+
+function finish(win, reason){
+  over = true;
+  $('endT').textContent = win ? 'G\'alaba!' : 'Mag\'lubiyat';
+  $('endP').textContent = reason || (win ? 'Raqibning joni tugadi.' : 'Joningiz tugadi.');
+  $('end').style.display = 'flex';
+}
+
+$('bAgain').onclick = () => {
+  if(solo || !conn || !conn.open){ location.reload(); return; }
+  send({t:'again'}); resetState();
+};
+</script>
+</body>
+</html>
